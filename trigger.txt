@@ -1,0 +1,288 @@
+create a class name account management in apex which should have the following functionly
+
+1.) if we pass the record id then it should return us the recoed information in the json format.
+2.) using this api we should be abe to crate new accout record.
+3 if you want to modify any field value account record we should be able to do it by  just passing the record id and the firld name and firld value which we want to modity
+4 if we pass the record id we should able to delete a record of account object.
+
+
+--------------------------
+
+1. After UPadte and After insert Account
+
+3. ACcount not have any opportunity then only we have to create one opportunity.
+
+
+newMap = A - OP1
+	B -
+		C -OP2
+
+trigger abs on Account(after insert, after update){
+
+Map<Id, Account> newMap = trigger.NewMap; =>> A, B, C, 
+
+List<String> accounts= new List<String>();
+						OP1,OP2,OP3
+for(Opportunity obj: [SELECT ID, AccountId FROM OPportunity WHERE Account ID IN: newMap.keyset()])
+{
+accounts.add(obj.AccountId); >>> OP1.AccountID >> A.ID;
+}
+List<String> 
+List<String> oppsIds  =new List<String>();
+----------------------------------------------------------------
+
+ map<id,list<opportunity>> nmap = new map<id,list<opportunity>>();
+    
+    list<opportunity> opp=trigger.new; //  new record that will insert
+    
+    set<id> accid = new set<id>(); //blank set
+    
+    for(opportunity a : opp)	 
+    {
+        accid.add(a.accountid); // accid contain the accontid of new record
+    }
+    
+    list<account> accs=[select id,(select accountid ,name from Opportunities) from account where id in : accid ]; // account record relataed with all oppoetunity record
+    
+    for(account a: accs)
+    {
+        nmap.put(a.id,a.opportunities);
+    }
+    
+    for(opportunity o : opp)
+    {
+        if(nmap.containsKey(o.accountid)) // if new opportunity
+        {
+            list<opportunity> opp1 = nmap.get(o.accountid);
+            
+            for(opportunity o1 : opp1)
+            {
+                if(o1.name==o.name)
+                {
+                    o.name= o.name+ 'duplicate';
+                }
+            }
+        }
+    }
+   
+
+===============================================================================================================================================
+trigger AccAssignment on Account (after insert, after update, before delete, after delete) {
+if( Trigger.isBefore ){
+if( Trigger.isDelete ){
+AccountTriggerHelper.dupOppDel( Trigger.OldMap );
+}
+}
+else if( Trigger.isAfter ){
+if( Trigger.isUpdate || Trigger.isInsert ){
+//AccountTriggerHelper.accInsertUpdate( Trigger.NewMap );
+}else if( Trigger.isDelete ){
+AccountTriggerHelper.backupAcc( Trigger.Old );
+}
+}
+}
+======================
+public class AccountTriggerHelper {
+public static void accInsertUpdate( Map<Id, Account> newAccMap ){
+
+List<Account> accNoOpp = [SELECT Name, (SELECT Name FROM Opportunities) FROM Account WHERE Id IN :newAccMap.keySet()];
+
+List< Opportunity > opps = new List< Opportunity >();
+for( Account acc : accNoOpp ){
+if( acc.Opportunities.isEmpty() ){
+Opportunity opp = new Opportunity( Name = 'First Opportunity-'+acc.Name, AccountId = acc.Id, StageName = 'Closed Won', CloseDate = Date.today() );
+opps.add( opp );
+}
+}
+if( !opps.isEmpty() ){
+INSERT opps;
+}
+}
+=========================================================
+public static void dupOppDel( Map<Id, Account> oldAccMap ){
+List<Account> accOpps = [ SELECT Name, ( SELECT Name FROM Opportunities
+WHERE StageName != 'Closed Won'
+AND StageName != 'Closed Lost' )
+FROM Account WHERE Id IN :oldAccMap.keySet() ];
+
+
+for( Account acc : accOpps ){
+if( !acc.Opportunities.isEmpty() ){
+oldAccMap.get( acc.Id ).addError( 'There are open Opportunities' );
+}
+}
+}
+
+=================================================
+public static void backupAcc( List<Account> newAccs ){
+List<Account_Backup__c> aBs = new List< Account_Backup__c >();
+for( Account acc : newAccs ){
+if( acc.MasterRecordId != null ){
+Account_Backup__c ab = new Account_Backup__c();
+ab.Account_Name__c = acc.Name;
+ab.Account_Phone_Number__c = acc.Phone;
+aBs.add( ab );
+}
+}
+if( !aBs.isEmpty() ){
+INSERT aBs;
+}
+}
+}
+=============================================================
+trigger OppAssignment on Opportunity (before insert, after update, before update) {
+if( Trigger.isBefore ){
+if( Trigger.isInsert ){
+//OppTriggerHelper.openOpp( Trigger.New );
+//OppTriggerHelper.checkDuplicacy( Trigger.New );
+OppTriggerHelper.getCurrency();
+}/*else if( Trigger.isUpdate ){
+OppTriggerHelper.checkTask( Trigger.NewMap, Trigger.oldMap );
+}
+}else if( Trigger.isAfter ){
+if( Trigger.isUpdate ){
+OppTriggerHelper.createDupRecord( Trigger.old );
+}*/
+}
+}
+================================================================
+public class OppTriggerHelper {
+@future(Callout=true)
+public static void getCurrency(){
+Decimal amt = CurrencyConvertApi.CurrencyConvertApi(2);
+System.debug(amt);
+}
+public static void checkDuplicacy( List<Opportunity> newOpps ){
+Set<Id> accIdSet = new Set<Id>();
+for( Opportunity opp : newOpps ){
+accIdSet.add( opp.AccountId );
+}
+List<Account> accOpps = [ SELECT Name, ( SELECT Name FROM Opportunities ) FROM Account WHERE Id IN :accIdSet ];
+Map<Id, List<Opportunity>> accOppMap = new Map<Id, List<Opportunity>>();
+for( Account acc : accOpps ){
+accOppMap.put( acc.Id, acc.Opportunities );
+}
+for( Opportunity opp : newOpps ){
+if( accOppMap.containsKey( opp.AccountId ) ){
+List<Opportunity> accOpp = accOppMap.get( opp.AccountId );
+for( Opportunity aOpp : accOpp ){
+if( aOpp.Name == opp.Name ){
+opp.Name = opp.Name + ' Duplicate Opportunity';
+}
+}
+}
+}
+}
+
+
+public static void createDupRecord( List<sObject> opps ){
+List<sObject> backupOpp = new List< Opportunity >();
+Map<String, Schema.SObjectField> fieldMap = Schema.SObjectType.Opportunity.fields.getMap();
+for( sObject opp : opps ){
+sObject newOpp = new Opportunity();
+for(String fieldName : fieldMap.keySet()) {
+if(fieldMap.get(fieldName).getDescribe().isUpdateable()) {
+if( fieldName == 'syncedquoteid' ) continue;
+newOpp.put(fieldName , opp.get( fieldName ));
+}
+}
+newOpp.put('Name', newOpp.get( 'Name' )+' Backup');
+backupOpp.add( newOpp );
+}
+INSERT backupOpp;
+}
+public static void checkTask( Map<Id, Opportunity> newOppIdMap, Map<Id, Opportunity> oldOppIdMap ){
+System.debug('Hello');
+List< Opportunity > oppTasks = [SELECT Name, ( SELECT Id FROM Tasks) FROM Opportunity
+WHERE Id IN :newOppIdMap.keySet() AND StageName != 'Closed Won'
+AND StageName != 'Closed Lost'
+];
+for( Opportunity opp : oppTasks ){
+if( (!opp.Tasks.isEmpty()) && oldOppIdMap.get( opp.Id ).StageName != newOppIdMap.get( opp.Id ).StageName ){
+newOppIdMap.get( opp.Id ).addError('You can’t change the stage until any task is related to it.');
+}
+}
+}
+public static void openOpp( List<Opportunity> newOpps ){
+Set<Id> ownerIds = new Set<Id>();
+for( Opportunity opp : newOpps ){
+ownerIds.add( opp.OwnerId );
+}
+Map<Id, integer> openOppCount = new Map<Id, integer>();
+for( Opportunity opp : [ SELECT Name, OwnerId FROM Opportunity WHERE OwnerId IN :ownerIds AND StageName != 'Closed Won' AND StageName != 'Closed lost' ] ){
+integer i = 1;
+if( openOppCount.containsKey( opp.OwnerId ) ){
+i = openOppCount.get( opp.OwnerId );
+i++;
+}
+openOppCount.put( opp.OwnerId, i );
+}
+for( Opportunity opp : newOpps ){
+if( openOppCount.containsKey( opp.OwnerId ) ){
+if( openOppCount.get( opp.OwnerId ) > 2 ){
+opp.addError( 'This user has more than 2 opportunities open.' );
+}
+}
+}
+}
+}
+============================================================================
+trigger OppProdAssignment on OpportunityLineItem (before insert) {
+if( Trigger.isBefore ){
+if( Trigger.isInsert ){
+OppProdTriggerHelper.checkPrice( Trigger.New );
+}
+}
+}
+=======================================================
+public class OppProdTriggerHelper {
+public static void checkPrice( List<OpportunityLineItem> newOppProds ){
+Set<Id> prodIds = new Set<Id>();
+for( OpportunityLineItem oLI : newOppProds ){
+if( oLI.UnitPrice < 1000 ){
+oLI.addError( 'Price should be greater than 1000$' );
+oLI.Description = oLI.Product2.Description;
+}
+}
+}
+}
+trigger LeadAssign on Lead (after insert, after Update) {
+if( Trigger.isAfter ){
+if( Trigger.isInsert || Trigger.isUpdate ){
+LeadTriggerHelper.convertLead(Trigger.new);
+}
+}
+}
+============================================================================= 
+public class LeadTriggerHelper {
+public static void convertLead( List<Lead> newLeads ){
+List<Database.LeadConvert> leadsToConvert = new List<Database.LeadConvert>();
+for( Lead l : newLeads ){
+if( l.IsConverted == false && l.LeadSource == 'Phone Inquiry' ){
+Database.LeadConvert lc = new Database.LeadConvert();
+lc.setLeadId(l.Id);
+lc.convertedstatus='Closed - Converted';
+lc.ownerid = UserInfo.getUserId();
+leadsToConvert.add(lc);
+}
+}
+if( !leadsToConvert.isEmpty() ){
+System.debug(leadsToConvert);
+List<Database.LeadConvertResult> res = Database.convertLead(leadsToConvert);
+}
+}
+}
+
+
+List<Ooppo> oppToInsert  = ne3w 
+for(Account idObj: newMap.values()){
+	if(accounts.contains(idObj.Id)){
+	}else{
+		Opportunity opp=new oppportunity;
+		opp.AccountId = idObj.Id;
+		opp.Name = 'opportunity'+ idObj.Name;
+		oppToInsert.add(opp);
+	}
+}
+
+Insert oppToInsert;
