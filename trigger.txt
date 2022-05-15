@@ -1,3 +1,5 @@
+//comment added by sunil
+
 create a class name account management in apex which should have the following functionly
 
 1.) if we pass the record id then it should return us the recoed information in the json format.
@@ -8,7 +10,8 @@ create a class name account management in apex which should have the following f
 
 --------------------------
 
-1. After UPadte and After insert Account
+1. After UPadte and After insert Accounts
+
 
 3. ACcount not have any opportunity then only we have to create one opportunity.
 
